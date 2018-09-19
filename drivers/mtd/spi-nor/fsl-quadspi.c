@@ -41,6 +41,8 @@
 #define QUADSPI_QUIRK_TKT253890		(1 << 2)
 /* Controller cannot wake up from wait mode, TKT245618 */
 #define QUADSPI_QUIRK_TKT245618         (1 << 3)
+/* Controller can only read half a rx fifo through AHB */
+#define QUADSPI_QUIRK_AHB_READ_HALF_FIFO  (1 << 4)
 
 /* The registers */
 #define QUADSPI_MCR			0x00
@@ -230,7 +232,8 @@ static const struct fsl_qspi_devtype_data vybrid_data = {
 	.rxfifo = 128,
 	.txfifo = 64,
 	.ahb_buf_size = 1024,
-	.driver_data = QUADSPI_QUIRK_SWAP_ENDIAN,
+	.driver_data = QUADSPI_QUIRK_SWAP_ENDIAN
+		       | QUADSPI_QUIRK_AHB_READ_HALF_FIFO,
 };
 
 static const struct fsl_qspi_devtype_data imx6sx_data = {
@@ -341,6 +344,11 @@ static u32 qspi_readl(struct fsl_qspi *q, void __iomem *addr)
 		return ioread32(addr);
 }
 
+static inline int needs_half_fifo(struct fsl_qspi *q)
+{
+	return q->devtype_data->driver_data & QUADSPI_QUIRK_AHB_READ_HALF_FIFO;
+}
+
 /*
  * An IC bug makes us to re-arrange the 32-bit data.
  * The following chips, such as IMX6SLX, have fixed this bug.
@@ -389,6 +397,10 @@ static void fsl_qspi_init_lut(struct fsl_qspi *q)
 	u8 addrlen = (nor->addr_width == 3) ? ADDR24BIT : ADDR32BIT;
 	u8 read_op = nor->read_opcode;
 	u8 read_dm = nor->read_dummy;
+
+	/* use only half fifo if controller needs that */
+	if (needs_half_fifo(q))
+		rxfifo /= 2;
 
 	fsl_qspi_unlock_lut(q);
 
@@ -679,6 +691,7 @@ static int fsl_qspi_init_ahb_read(struct fsl_qspi *q)
 {
 	void __iomem *base = q->iobase;
 	int seqid;
+	u32 buf3cr;
 
 	/* AHB configuration for access buffer 0/1/2 .*/
 	qspi_writel(q, QUADSPI_BUFXCR_INVALID_MSTRID, base + QUADSPI_BUF0CR);
@@ -686,12 +699,14 @@ static int fsl_qspi_init_ahb_read(struct fsl_qspi *q)
 	qspi_writel(q, QUADSPI_BUFXCR_INVALID_MSTRID, base + QUADSPI_BUF2CR);
 	/*
 	 * Set ADATSZ with the maximum AHB buffer size to improve the
-	 * read performance.
+	 * read performance, except when the controller should not use
+	 * more than half its RX fifo in AHB reads, in which case read
+	 * size is given in the LUT FSL_READ instructions.
 	 */
-	qspi_writel(q, QUADSPI_BUF3CR_ALLMST_MASK |
-			((q->devtype_data->ahb_buf_size / 8)
-			<< QUADSPI_BUF3CR_ADATSZ_SHIFT),
-			base + QUADSPI_BUF3CR);
+	buf3cr = QUADSPI_BUF3CR_ALLMST_MASK
+		| ( (needs_half_fifo(q)? 0 : q->devtype_data->ahb_buf_size / 8)
+		    << QUADSPI_BUF3CR_ADATSZ_SHIFT);
+	writel(buf3cr, base + QUADSPI_BUF3CR);
 
 	/* We only use the buffer3 */
 	qspi_writel(q, 0, base + QUADSPI_BUF0IND);
