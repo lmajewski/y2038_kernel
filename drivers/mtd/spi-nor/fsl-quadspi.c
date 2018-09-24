@@ -910,6 +910,9 @@ static ssize_t fsl_qspi_read(struct spi_nor *nor, loff_t from,
 	struct fsl_qspi *q = nor->priv;
 	u8 cmd = nor->read_opcode;
 	int seqid;
+	size_t qlen = q->nor_size * 4;
+	int nor_idx = nor - q->nor;
+	size_t nor_ofs = q->nor_size * nor_idx;
 
 	/* Set the actual lut sequence for AHB Read from the considered nor. */
 	seqid = fsl_qspi_get_seqid(q, nor->read_opcode);
@@ -928,8 +931,9 @@ static ssize_t fsl_qspi_read(struct spi_nor *nor, loff_t from,
 
 	/* if necessary,ioremap buffer before AHB read, */
 	if (!q->ahb_addr) {
-		q->memmap_offs = q->chip_base_addr + from;
-		q->memmap_len = len > QUADSPI_MIN_IOMAP ? len : QUADSPI_MIN_IOMAP;
+		q->memmap_offs = q->chip_base_addr;
+		q->memmap_len = qlen > QUADSPI_MIN_IOMAP ?
+			qlen : QUADSPI_MIN_IOMAP;
 
 		q->ahb_addr = ioremap_nocache(
 				q->memmap_phy + q->memmap_offs,
@@ -944,8 +948,9 @@ static ssize_t fsl_qspi_read(struct spi_nor *nor, loff_t from,
 			q->memmap_offs + q->memmap_len) {
 		iounmap(q->ahb_addr);
 
-		q->memmap_offs = q->chip_base_addr + from;
-		q->memmap_len = len > QUADSPI_MIN_IOMAP ? len : QUADSPI_MIN_IOMAP;
+		q->memmap_offs = q->chip_base_addr;
+		q->memmap_len = qlen > QUADSPI_MIN_IOMAP ?
+			qlen : QUADSPI_MIN_IOMAP;
 		q->ahb_addr = ioremap_nocache(
 				q->memmap_phy + q->memmap_offs,
 				q->memmap_len);
@@ -956,12 +961,11 @@ static ssize_t fsl_qspi_read(struct spi_nor *nor, loff_t from,
 	}
 
 	dev_dbg(q->dev, "cmd [%x],read from %p, len:%zd\n",
-		cmd, q->ahb_addr + q->chip_base_addr + from - q->memmap_offs,
+		cmd, q->ahb_addr + nor_ofs + from - q->memmap_offs,
 		len);
 
 	/* Read out the data directly from the AHB buffer.*/
-	memcpy(buf, q->ahb_addr + q->chip_base_addr + from - q->memmap_offs,
-		len);
+	memcpy(buf, q->ahb_addr + nor_ofs + from - q->memmap_offs, len);
 
 	return len;
 }
