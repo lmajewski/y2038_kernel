@@ -690,7 +690,6 @@ static void fsl_qspi_set_map_addr(struct fsl_qspi *q)
 static int fsl_qspi_init_ahb_read(struct fsl_qspi *q)
 {
 	void __iomem *base = q->iobase;
-	int seqid;
 	u32 buf3cr;
 
 	/* AHB configuration for access buffer 0/1/2 .*/
@@ -712,16 +711,6 @@ static int fsl_qspi_init_ahb_read(struct fsl_qspi *q)
 	qspi_writel(q, 0, base + QUADSPI_BUF0IND);
 	qspi_writel(q, 0, base + QUADSPI_BUF1IND);
 	qspi_writel(q, 0, base + QUADSPI_BUF2IND);
-
-	/* Set the default lut sequence for AHB Read. */
-	seqid = fsl_qspi_get_seqid(q, q->nor[0].read_opcode);
-	if (seqid < 0)
-		return seqid;
-
-	qspi_writel(q, seqid << QUADSPI_BFGENCR_SEQID_SHIFT,
-		q->iobase + QUADSPI_BFGENCR);
-
-	return 0;
 }
 
 /* This function was used to prepare and enable QSPI clock */
