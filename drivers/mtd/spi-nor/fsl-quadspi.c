@@ -979,7 +979,7 @@ static void fsl_qspi_unprep(struct spi_nor *nor, enum spi_nor_ops ops)
 
 static int fsl_qspi_probe(struct platform_device *pdev)
 {
-	const struct spi_nor_hwcaps hwcaps = {
+	struct spi_nor_hwcaps hwcaps = {
 		.mask = SNOR_HWCAPS_READ_1_1_4 |
 			SNOR_HWCAPS_PP,
 	};
@@ -989,7 +989,7 @@ static int fsl_qspi_probe(struct platform_device *pdev)
 	struct resource *res;
 	struct spi_nor *nor;
 	struct mtd_info *mtd;
-	int ret, i = 0;
+	int ret, i = 0, width;
 
 	q = devm_kzalloc(dev, sizeof(*q), GFP_KERNEL);
 	if (!q)
@@ -1105,6 +1105,14 @@ static int fsl_qspi_probe(struct platform_device *pdev)
 				&q->clk_rate);
 		if (ret < 0)
 			goto mutex_failed;
+
+		if (!of_property_read_u32(np, "spi-rx-bus-width", &width)) {
+			if (width == 2) {
+				hwcaps.mask &= ~SNOR_HWCAPS_READ_QUAD;
+				hwcaps.mask |= SNOR_HWCAPS_READ_1_1_2;
+			} else if (width != 4)
+				return -EINVAL;
+		}
 
 		/* set the chip address for READID */
 		fsl_qspi_set_base_addr(q, nor);
