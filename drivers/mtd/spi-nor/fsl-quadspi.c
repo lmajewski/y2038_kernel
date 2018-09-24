@@ -119,6 +119,10 @@
 #define QUADSPI_FR			0x160
 #define QUADSPI_FR_TFF_MASK		0x1
 
+#define QUADSPI_SPTRCLR                 0x16c
+#define QUADSPI_SPTRCLR_BFPTRC_SHIFT    0
+#define QUADSPI_SPTRCLR_BFPTRC_MASK     (0x1 << QUADSPI_SPTRCLR_BFPTRC_SHIFT)
+
 #define QUADSPI_SFA1AD			0x180
 #define QUADSPI_SFA2AD			0x184
 #define QUADSPI_SFB1AD			0x188
@@ -905,6 +909,22 @@ static ssize_t fsl_qspi_read(struct spi_nor *nor, loff_t from,
 {
 	struct fsl_qspi *q = nor->priv;
 	u8 cmd = nor->read_opcode;
+	int seqid;
+
+	/* Set the actual lut sequence for AHB Read from the considered nor. */
+	seqid = fsl_qspi_get_seqid(q, nor->read_opcode);
+	if (seqid < 0)
+		return seqid;
+
+	qspi_writel(q, seqid << QUADSPI_BFGENCR_SEQID_SHIFT,
+		    q->iobase + QUADSPI_BFGENCR);
+
+	/* Reset the AHB sequence pointer */
+	qspi_writel(q, QUADSPI_SPTRCLR_BFPTRC_MASK,
+		    q->iobase + QUADSPI_SPTRCLR);
+
+	/* make sure the Rx buffer is read through AHB, not IP */
+	qspi_writel(q, QUADSPI_RBCT_WMRK_MASK, q->iobase + QUADSPI_RBCT);
 
 	/* if necessary,ioremap buffer before AHB read, */
 	if (!q->ahb_addr) {
